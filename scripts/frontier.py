@@ -8,6 +8,7 @@ class frontier(object):
         # these lists are np arrays of map size
         self.map_open_list = None
         self.map_close_list = None
+        print("HI")
         self.frontier_open_list = None
         self.frontier_close_list = None
         self.OccupancyGrid = None
