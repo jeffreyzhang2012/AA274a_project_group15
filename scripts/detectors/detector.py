@@ -258,10 +258,17 @@ class Detector:
 
         ########## Code starts here ##########
         # TODO: Extract camera intrinsic parameters.
-        self.cx = 0.
-        self.cy = 0.
-        self.fx = 1.
-        self.fy = 1.
+        h = msg.height
+        w = msg.width
+        distortion_params = msg.D
+        intr_camera_matrix = msg.K
+        rectification_matrix = msg.R
+        projection_matrix = msg.P
+
+        self.cx = intr_camera_matrix[2]
+        self.cy = intr_camera_matrix[5]
+        self.fx = intr_camera_matrix[0]
+        self.fy = intr_camera_matrix[4]
         ########## Code ends here ##########
 
     def laser_callback(self, msg):

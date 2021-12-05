@@ -4,6 +4,7 @@ import rospy
 from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
 from geometry_msgs.msg import Twist, Pose2D, PoseStamped
 from std_msgs.msg import String
+from asl_turtlebot.msg import DetectedObjectList
 import tf
 import numpy as np
 from numpy import linalg
@@ -18,12 +19,16 @@ from enum import Enum
 from dynamic_reconfigure.server import Server
 from asl_turtlebot.cfg import NavigatorConfig
 
+STOP_DIST_CONST = 3
+STOP_TIME_CONST = 5
+
 # state machine modes, not all implemented
 class Mode(Enum):
     IDLE = 0
     ALIGN = 1
     TRACK = 2
     PARK = 3
+    STOP = 4
 
 
 class Navigator:
@@ -45,8 +50,14 @@ class Navigator:
         self.x_g = None
         self.y_g = None
         self.theta_g = None
+        self.explored_all = False
+        self.frontier =  frontier
+
+        #ts
+
 
         self.th_init = 0.0
+        self.stop_time = 0.0 
 
         # map parameters
         self.map_width = 0
@@ -120,6 +131,7 @@ class Navigator:
         rospy.Subscriber("/map", OccupancyGrid, self.map_callback)
         rospy.Subscriber("/map_metadata", MapMetaData, self.map_md_callback)
         rospy.Subscriber("/cmd_nav", Pose2D, self.cmd_nav_callback)
+        rospy.Subscriber('/detector/objects', DetectedObjectList, self.detected_callback)
 
         print("finished init")
 
@@ -145,6 +157,14 @@ class Navigator:
             self.y_g = data.y
             self.theta_g = data.theta
             self.replan()
+
+    def detected_callback(self, data):
+        for o in msg.ob_msgs:
+            print("detected: " + o.name)
+            if o.name == "stop_sign" and o.distance < STOP_DIST_CONST and self.mode == Mode.TRACK:
+                if self.stop_time + STOP_TIME_CONST < rospy.get_time():
+                    self.stop_time = rospy.get_time()
+                    self.mode = Mode.STOP
 
     def map_md_callback(self, msg):
         """
@@ -280,6 +300,8 @@ class Navigator:
             V, om = self.heading_controller.compute_control(
                 self.x, self.y, self.theta, t
             )
+        elif self.mode == Mode.STOP:
+        V, om = 0.0,0.0
         else:
             V = 0.0
             om = 0.0
@@ -415,6 +437,19 @@ class Navigator:
             # STATE MACHINE LOGIC
             # some transitions handled by callbacks
             if self.mode == Mode.IDLE:
+                # if not explored_all:
+                #     next_step = self.frontier.step()
+                #     if not next_step:
+                #         explored_all = True
+                #     else:
+                #         self.x_g = next_step[0]
+                #         self.y_g = next_step[1]
+                #         self.replan()
+                # else:
+                #     self.x_g = 0
+                #     self.y_g = 0
+                #     self.theta = 0
+                #     self.replan()
                 pass
             elif self.mode == Mode.ALIGN:
                 if self.aligned():
@@ -438,6 +473,9 @@ class Navigator:
                     self.y_g = None
                     self.theta_g = None
                     self.switch_mode(Mode.IDLE)
+            elif self.mode == Mode.STOP:
+                if self.stop_time + STOP_TIME_CONST < rospy.get_time():
+                    self.switch_mode(Mode.TRACK)
 
             self.publish_control()
             rate.sleep()
