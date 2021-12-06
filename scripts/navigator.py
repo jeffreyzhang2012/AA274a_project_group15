@@ -360,8 +360,8 @@ class Navigator:
             self.plan_resolution,
         )
 
-        rospy.loginfo("Navigator: computing navigation plan")
-        success = problem.solve(self.plan_resolution * 2, 1000, shortcut=True)
+        rospy.loginfo("Navigator: computing navigation plan from (%d, %d) to (%d, %d)", x_init[0], x_init[1], x_goal[0], x_goal[1])
+        success = problem.solve(self.plan_resolution * 2, 2000, shortcut=False)
         # success = problem.solve()
         if not success:
             rospy.loginfo("Planning failed")
