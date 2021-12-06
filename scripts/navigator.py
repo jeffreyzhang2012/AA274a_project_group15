@@ -71,7 +71,7 @@ class Navigator:
         self.occupancy_updated = False
 
         # plan parameters
-        self.plan_resolution = 0.1
+        self.plan_resolution = 0.05
         self.plan_horizon = 15
 
         # time when we started following the plan
@@ -90,9 +90,9 @@ class Navigator:
         )
 
         # threshold at which navigator switches from trajectory to pose control
-        self.near_thresh = 0.2
-        self.at_thresh = 0.02
-        self.at_thresh_theta = 0.05
+        self.near_thresh = 0.1
+        self.at_thresh = 0.05
+        self.at_thresh_theta = 0.1
 
         # trajectory smoothing
         self.spline_alpha = 0.15
@@ -118,6 +118,11 @@ class Navigator:
         self.nav_planned_path_pub = rospy.Publisher(
             "/planned_path", Path, queue_size=10
         )
+
+        self.state_pub = rospy.Publisher(
+            "/robotstate", String, queue_size=10
+        )
+
         self.nav_smoothed_path_pub = rospy.Publisher(
             "/cmd_smoothed_path", Path, queue_size=10
         )
@@ -159,6 +164,7 @@ class Navigator:
             self.y_g = data.y
             self.theta_g = data.theta
             self.replan()
+        # self.occupancy.is_free_2(np.array([data.x,data.y]))
 
     def detected_callback(self, data):
         for o in msg.ob_msgs:
@@ -194,13 +200,14 @@ class Navigator:
                 self.map_height,
                 self.map_origin[0],
                 self.map_origin[1],
-                8,
+                6,
                 self.map_probs,
             )
+            # if self.x_g is not None and self.mode == Mode.IDLE:
             if self.x_g is not None:
                 # if we have a goal to plan to, replan
                 rospy.loginfo("replanning because of new map")
-                # self.replan()  # new map, need to replan
+                self.replan()  # new map, need to replan
 
     def shutdown_callback(self):
         """
@@ -313,6 +320,17 @@ class Navigator:
         cmd_vel.angular.z = om
         self.nav_vel_pub.publish(cmd_vel)
 
+    def publish_state(self):
+        if self.mode == Mode.IDLE:
+            self.state_pub.publish("IDLE")
+        elif self.mode == Mode.ALIGN:
+            self.state_pub.publish("ALIGN")
+        elif self.mode == Mode.TRACK:
+            self.state_pub.publish("TRACK")
+        elif self.mode == Mode.PARK:
+            self.state_pub.publish("PARK")
+
+
     def get_current_plan_time(self):
         t = (rospy.get_rostime() - self.current_plan_start_time).to_sec()
         return max(0.0, t)  # clip negative time to 0
@@ -345,23 +363,25 @@ class Navigator:
         # problem = AStar(
         #     state_min,
         #     state_max,
-        #     x_init,
-        #     x_goal,
+        #     x_init,replan
         #     self.occupancy,
         #     self.plan_resolution,
         # )
 
         problem = GeometricRRT(
-            state_min,
-            state_max,
+            np.array([0,0]),
+            np.array([4,4]),
             x_init,
             x_goal,
             self.occupancy,
             self.plan_resolution,
         )
 
+        success = problem.solve(self.plan_resolution * 2, 2000, shortcut=True)
         rospy.loginfo("Navigator: computing navigation plan from (%d, %d) to (%d, %d)", x_init[0], x_init[1], x_goal[0], x_goal[1])
-        success = problem.solve(self.plan_resolution * 2, 2000, shortcut=False)
+        # for i in range(10,4,-1):
+        #     if success: break
+        #     problem.occupancy.window_size -= 1
         # success = problem.solve()
         if not success:
             rospy.loginfo("Planning failed")
@@ -473,13 +493,13 @@ class Navigator:
                 elif not self.close_to_plan_start():
                     rospy.loginfo("replanning because far from start")
                     self.replan()
-                elif (
-                    rospy.get_rostime() - self.current_plan_start_time
-                ).to_sec() > self.current_plan_duration:
-                    rospy.loginfo("replanning because out of time")
-                    self.replan()  # we aren't near the goal but we thought we should have been, so replan
+                # elif (
+                #     rospy.get_rostime() - self.current_plan_start_time
+                # ).to_sec() > self.current_plan_duration:
+                #     rospy.loginfo("replanning because out of time")
+                #     self.replan()  # we aren't near the goal but we thought we should have been, so replan
             elif self.mode == Mode.PARK:
-                if self.at_goal():
+                if (self.x_g is not None) and self.at_goal():
                     # forget about goal:
                     self.x_g = None
                     self.y_g = None
@@ -490,6 +510,7 @@ class Navigator:
                     self.switch_mode(Mode.TRACK)
 
             self.publish_control()
+            self.publish_state()
             rate.sleep()
 
 

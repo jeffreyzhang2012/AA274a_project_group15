@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from .utils import plot_line_segments # , line_line_intersection
 import random
-
+from utils.grids import StochOccupancyGrid2D
+import copy 
 class RRT(object):
     """ Represents a motion planning problem to be solved using the RRT algorithm"""
     def __init__(self, statespace_lo, statespace_hi, x_init, x_goal, occupancy, resolution=1):
@@ -70,7 +71,7 @@ class RRT(object):
         """
         raise NotImplementedError("steer_towards must be overriden by a subclass of RRT")
 
-    def solve(self, eps, max_iters=1000, goal_bias=0.05, shortcut=False):
+    def solve(self, eps, max_iters=1000, goal_bias=0.2, shortcut=False):
         """
         Constructs an RRT rooted at self.x_init with the aim of producing a
         dynamically-feasible and obstacle-free trajectory from self.x_init
@@ -123,15 +124,17 @@ class RRT(object):
             if random.uniform(0, 1) < goal_bias:
                 xRand = self.x_goal
             else:
-                xRand = self.snap_to_grid(tuple([random.uniform(self.statespace_lo[i], self.statespace_hi[i]) for i in range(state_dim)]))
+                xRand = tuple([random.uniform(self.statespace_lo[i], self.statespace_hi[i]) for i in range(state_dim)])
+                # xRand = self.snap_to_grid(tuple([random.uniform(self.statespace_lo[i], self.statespace_hi[i]) for i in range(state_dim)]))
             xNearInd = self.find_nearest(V[range(n), :], xRand)
             xNew = self.steer_towards(V[xNearInd], xRand, eps)
             if self.is_free_motion(xNew):
+            # if 1:
                 V[n] = xNew
                 P[n] = xNearInd
                 if xNew[0] == self.x_goal[0] and xNew[1] == self.x_goal[1]:
                     success = True
-                    path = [self.x_goal]
+                    path = [np.array(self.x_goal)]
                     currIndex = n
                     while P[currIndex] != -1:
                         path.append(V[P[currIndex]])
@@ -141,22 +144,37 @@ class RRT(object):
             if success:
                 break
         ########## Code ends here ##########
-
-        plt.figure()
+        if not success:
+            print("\n\n\n\n")
+            print(self.occupancy.window_size)
+            print("\n\n\n\n")
+        # plt.figure()
+        # print("\n\n\n\n\n")
+        # print(self.x_init)
+        # print(self.x_goal)
+        # print(self.statespace_lo)
+        # print(self.statespace_hi)
+        # print(self.occupancy.width)
+        # print(self.occupancy.height)
+        # print(self.resolution)
+        # print("\n\n\n\n\n")
         # self.plot_problem()
-        self.plot_tree(V, P, color="blue", linewidth=.5, label="RRT tree", alpha=0.5)
+        # self.plot_tree(V, P, color="blue", linewidth=.5, label="RRT tree", alpha=0.5)
         if success:
             if shortcut:
-                self.plot_path(color="purple", linewidth=2, label="Original solution path")
+                # pass/
+        #         self.plot_path(color="purple", linewidth=2, label="Original solution path")
                 self.shortcut_path()
-                self.plot_path(color="green", linewidth=2, label="Shortcut solution path")
-            else:
-                self.plot_path(color="green", linewidth=2, label="Solution path")
-            plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.03), fancybox=True, ncol=3)
-            plt.scatter(V[:n,0], V[:n,1])
-        else:
-            print("Solution not found!")
-
+        #         self.plot_path(color="green", linewidth=2, label="Shortcut solution path")
+        #     else:
+        #         self.plot_path(color="green", linewidth=2, label="Solution path")
+        #     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.03), fancybox=True, ncol=3)
+        #     plt.scatter(V[:n,0], V[:n,1])
+        #     print("solution found!")
+        # else:
+        #     plt.scatter(V[:,0],V[:,1])
+        #     print("Solution not found!")
+        # plt.pause(0.1)
         return success
 
     def plot_problem(self):
@@ -178,23 +196,60 @@ class RRT(object):
         """
         ########## Code starts here ##########
         success = False
+        # help = copy.deepcopy(self.path)
+        print(self.path)
         while not success:
             success = True
-            index = 1
+            index = 0
             step = 10
             while index < len(self.path)-1:
+                x = self.path[index]
+                if np.all(x==self.x_init) or np.all(x==self.x_goal):
+                    index += 1
+                    continue
                 dx = (self.path[index+1][0] - self.path[index-1][0]) / step
                 dy = (self.path[index+1][1] - self.path[index-1][1]) / step
                 temp = True
-                for i in range(step + 1):
-                    if not self.is_free_motion(self.snap_to_grid((self.path[index-1][0] + i * dx, self.path[index-1][1] + i * dy))):
+
+                for i in range(step):
+                    if not self.is_free_motion(self.snap_to_grid((self.path[index-1][0] + i * dx, self.path[index-1][1] + i * dy))) == 1:
                         temp = False
                         break
-                if temp:
+                if temp and np.linalg.norm(self.path[index+1] - self.path[index-1]) < 0.5 and len(self.path) > 4:
+                    # print(np.linalg.norm(self.path[index+1] - self.path[index-1]))
+                    # if np.linalg.norm(self.path[index+1] - self.path[index-1]) < 0.5 and len(self.path) > 4:
+                    # if len(self.path) > 8:
                     self.path.pop(index)
                     success = False
+                    # else:
+                        # print(self.path)
+                        # return
+                        # break
                 else:
                     index += 1
+        print(self.path)
+        # self.path = help
+            # i = 0
+            # step = 10
+            # print("G@$@$H@%H(%H&")
+            # while(i < len(self.path) - 1):
+            #     x = self.path[i]
+            #     if np.all(x==self.x_init) or np.all(x==self.x_goal):
+            #         i += 1
+            #         continue
+            #     dx = (self.path[index+1][0] - self.path[index-1][0]) / step
+            #     dy = (self.path[index+1][1] - self.path[index-1][1]) / step
+            #     temp = True
+            #     print(i)
+            #     print("GGGEWG")
+            #     for j in range(step):
+            #         if not self.is_free_motion(self.snap_to_grid((self.path[index-1][0] + j * dx, self.path[index-1][1] + j * dy))) == 1:
+            #             temp = False
+            #     if temp:
+            #         self.path.pop(i)
+            #         success = False
+            #     else:
+            #         i += 1
         ########## Code ends here ##########
 
 class GeometricRRT(RRT):
@@ -207,6 +262,8 @@ class GeometricRRT(RRT):
         # Consult function specification in parent (RRT) class.
         ########## Code starts here ##########
         # Hint: This should take one line.
+        # print(V,x)
+        # print("theta",np.array(V)[2],np.array(x)[2])
         return np.argmin([np.linalg.norm(np.array(V[i]) - np.array(x)) for i in range(len(V))])
         ########## Code ends here ##########
 
@@ -218,8 +275,20 @@ class GeometricRRT(RRT):
         ########## Code ends here ##########
 
     def is_free_motion(self, x2):
-        if x2[0] >= 0 and x2[0] < self.occupancy.width and x2[1] >= 0 and x2[1] < self.occupancy.height and self.occupancy.is_free(x2):
+        # print("\n\n\n\n")
+        # print(x2)
+        # print(self.occupancy.is_free_2(self.x_goal))
+        x2 = self.snap_to_grid(copy.copy(x2))
+        # print(x2)
+        # print(self.occupancy.width * self.resolution)
+        # print("\n\n\n\n")
+        # if not(self.x_goal[0] >= 0 and self.x_goal[0] < self.occupancy.width * self.resolution and self.x_goal[1] >= 0 and self.x_goal[1] < self.occupancy.height * self.resolution):
+            # print("\n\n\n\n")
+            # print("NONONONONONO")
+            # print("\n\n\n\n")
+        if x2[0] >= 0 and x2[0] < self.occupancy.width * self.resolution and x2[1] >= 0 and x2[1] < self.occupancy.height * self.resolution and self.occupancy.is_free_2(x2) == 1:
             return True
+            
         return False
 
     def plot_tree(self, V, P, **kwargs):
@@ -304,37 +373,37 @@ class GeometricRRT(RRT):
 #             pts.extend(new_pts)
 #         plt.plot([x for x, y, th in pts], [y for x, y, th in pts], **kwargs)
 
-class DetOccupancyGrid2D(object):
-    """
-    A 2D state space grid with a set of rectangular obstacles. The grid is
-    fully deterministic
-    """
-    def __init__(self, width, height, obstacles):
-        self.width = width
-        self.height = height
-        self.obstacles = obstacles
+# class DetOccupancyGrid2D(object):
+#     """
+#     A 2D state space grid with a set of rectangular obstacles. The grid is
+#     fully deterministic
+#     """
+#     def __init__(self, width, height, obstacles):
+#         self.width = width
+#         self.height = height
+#         self.obstacles = obstacles
 
-    def is_free(self, x):
-        """Verifies that point is not inside any obstacles"""
-        for obs in self.obstacles:
-            inside = True
-            for dim in range(len(x)):
-                if x[dim] < obs[0][dim] or x[dim] > obs[1][dim]:
-                    inside = False
-                    break
-            if inside:
-                return False
-        return True
+#     def is_free(self, x):
+#         """Verifies that point is not inside any obstacles"""
+#         for obs in self.obstacles:
+#             inside = True
+#             for dim in range(len(x)):
+#                 if x[dim] < obs[0][dim] or x[dim] > obs[1][dim]:
+#                     inside = False
+#                     break
+#             if inside:
+#                 return False
+#         return True
 
-    def plot(self, fig_num=0):
-        """Plots the space and its obstacles"""
-        fig = plt.figure(fig_num)
-        ax = fig.add_subplot(111, aspect='equal')
-        for obs in self.obstacles:
-            ax.add_patch(
-            patches.Rectangle(
-            obs[0],
-            obs[1][0]-obs[0][0],
-            obs[1][1]-obs[0][1],))
-        ax.set(xlim=(0,self.width), ylim=(0,self.height))
+#     def plot(self, fig_num=0):
+#         """Plots the space and its obstacles"""
+#         fig = plt.figure(fig_num)
+#         ax = fig.add_subplot(111, aspect='equal')
+#         for obs in self.obstacles:
+#             ax.add_patch(
+#             patches.Rectangle(
+#             obs[0],
+#             obs[1][0]-obs[0][0],
+#             obs[1][1]-obs[0][1],))
+#         ax.set(xlim=(0,self.width), ylim=(0,self.height))
 
