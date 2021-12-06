@@ -40,8 +40,11 @@ class StochOccupancyGrid2D(object):
         self.origin_x = origin_x
         self.origin_y = origin_y
         self.probs = probs
+        # window_size = 0.2
         self.window_size = window_size
         self.thresh = thresh
+        print("WEGHIEGWHWEIGH")
+        print(np.array(probs).shape)
 
     def snap_to_grid(self, x):
         return (self.resolution*round(x[0]/self.resolution), self.resolution*round(x[1]/self.resolution))
@@ -53,13 +56,44 @@ class StochOccupancyGrid2D(object):
         lower = -int(round((self.window_size-1)/2))
         upper = int(round((self.window_size-1)/2))
         for dx in range(lower,upper+1):
-            for dy in range(lower,upper+1):
+            for dy in range(lower,upper+1):        
+        # for dx in [0]:
+            # for dy in [0]:
                 x, y = self.snap_to_grid([state[0] + dx * self.resolution, state[1] + dy * self.resolution])
                 grid_x = int((x - self.origin_x) / self.resolution)
                 grid_y = int((y - self.origin_y) / self.resolution)
                 if grid_y>0 and grid_x>0 and grid_x<self.width and grid_y<self.height:
-                    p_total *= (1.0-max(0.0,float(self.probs[grid_y * self.width + grid_x])/100.0))
+                    p_total *= (1.0-float(self.probs[grid_y * self.width + grid_x])/100.0)
         return (1.0-p_total) < self.thresh
+
+    def is_free_2(self,state):
+        def prob2val(prob):
+            if prob == 0.0:
+                #free
+                return 1
+            elif prob > 0:
+                #obstacle
+                return 0
+            elif prob < 0:
+                #unexplored
+                return -1
+        lower = -int(round((self.window_size-1)/2))
+        upper = int(round((self.window_size-1)/2))
+        for dx in range(lower,upper+1):
+            for dy in range(lower,upper+1):
+                if np.linalg.norm(np.array([dx,dy])) >= (self.window_size-1)/2: continue;
+                x, y = self.snap_to_grid([state[0] + dx * self.resolution, state[1] + dy * self.resolution])
+                grid_x = int((x - self.origin_x) / self.resolution)
+                grid_y = int((y - self.origin_y) / self.resolution)
+                if grid_y>0 and grid_x>0 and grid_x<self.width and grid_y<self.height:
+                    prob = float(self.probs[grid_y * self.width + grid_x])/100.0
+                    if prob > 0.0:
+                        return prob2val(prob)
+        x,y = self.snap_to_grid([state[0], state[1]])
+        grid_x = int((x - self.origin_x) / self.resolution)
+        grid_y = int((y - self.origin_y) / self.resolution)
+        prob = float(self.probs[grid_y * self.width + grid_x])/100.0 
+        return prob2val(prob)
 
     def plot(self, fig_num=0):
         fig = plt.figure(fig_num)
