@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 from controllers import PoseController, TrajectoryTracker, HeadingController
 from enum import Enum
 
+from frontier import *
+
 from dynamic_reconfigure.server import Server
 from asl_turtlebot.cfg import NavigatorConfig
 
@@ -78,10 +80,10 @@ class Navigator:
         self.plan_start = [0.0, 0.0]
 
         # Robot limits
-        self.v_max = 0.2  # maximum velocity
+        self.v_max = 0.15  # maximum velocity
         self.om_max = 0.4  # maximum angular velocity
 
-        self.v_des = 0.12  # desired cruising velocity
+        self.v_des = 0.1  # desired cruising velocity
         self.theta_start_thresh = 0.05  # threshold in theta to start moving forward when path-following
         self.start_pos_thresh = (
             0.2  # threshold to be far enough into the plan to recompute it
@@ -198,7 +200,7 @@ class Navigator:
             if self.x_g is not None:
                 # if we have a goal to plan to, replan
                 rospy.loginfo("replanning because of new map")
-                self.replan()  # new map, need to replan
+                # self.replan()  # new map, need to replan
 
     def shutdown_callback(self):
         """
@@ -301,7 +303,7 @@ class Navigator:
                 self.x, self.y, self.theta, t
             )
         elif self.mode == Mode.STOP:
-        V, om = 0.0,0.0
+            V, om = 0.0,0.0
         else:
             V = 0.0
             om = 0.0

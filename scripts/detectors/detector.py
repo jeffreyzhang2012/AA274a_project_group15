@@ -5,7 +5,8 @@ import os
 # watch out on the order for the next two imports lol
 from tf import TransformListener
 try:
-    import tensorflow as tf
+    import tensorflow.compat.v1 as tf
+    tf.disable_v2_behavior()
 except:
     pass
 import numpy as np
@@ -135,7 +136,7 @@ class Detector:
         f_scores, f_boxes, f_classes = [], [], []
         f_num = 0
 
-        for i in range(num):
+        for i in range(math.floor(num)):
             if scores[i] >= self.params.min_score:
                 f_scores.append(scores[i])
                 f_boxes.append(boxes[i])
