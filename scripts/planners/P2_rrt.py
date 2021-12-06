@@ -1,18 +1,22 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from utils import plot_line_segments, line_line_intersection
+import matplotlib.patches as patches
+from .utils import plot_line_segments # , line_line_intersection
+import random
 
 class RRT(object):
     """ Represents a motion planning problem to be solved using the RRT algorithm"""
-    def __init__(self, statespace_lo, statespace_hi, x_init, x_goal, obstacles):
+    def __init__(self, statespace_lo, statespace_hi, x_init, x_goal, occupancy, resolution=1):
         self.statespace_lo = np.array(statespace_lo)    # state space lower bound (e.g., [-5, -5])
         self.statespace_hi = np.array(statespace_hi)    # state space upper bound (e.g., [5, 5])
-        self.x_init = np.array(x_init)                  # initial state
-        self.x_goal = np.array(x_goal)                  # goal state
-        self.obstacles = obstacles                      # obstacle set (line segments)
+        self.occupancy = occupancy
+        self.resolution = resolution
+        self.x_init = self.snap_to_grid(x_init)    # initial state
+        self.x_goal = self.snap_to_grid(x_goal)    # goal state
+        # self.obstacles = obstacles                      # obstacle set (line segments)
         self.path = None        # the final path as a list of states
 
-    def is_free_motion(self, obstacles, x1, x2):
+    def is_free_motion(self, x2):
         """
         Subject to the robot dynamics, returns whether a point robot moving
         along the shortest path from x1 to x2 would collide with any obstacles
@@ -26,6 +30,15 @@ class RRT(object):
             Boolean True/False
         """
         raise NotImplementedError("is_free_motion must be overriden by a subclass of RRT")
+
+    def snap_to_grid(self, x):
+        """ Returns the closest point on a discrete state grid
+        Input:
+            x: tuple state
+        Output:
+            A tuple that represents the closest point to x on the discrete state grid
+        """
+        return (self.resolution*round(x[0]/self.resolution), self.resolution*round(x[1]/self.resolution))
 
     def find_nearest(self, V, x):
         """
@@ -105,40 +118,32 @@ class RRT(object):
         #   - the order in which you pass in arguments to steer_towards and is_free_motion is important
 
         ########## Code starts here ##########
-        self.path = None
-        for i in range(1, max_iters):
-            z = np.random.uniform()
-            if z < goal_bias:
-                x_rand = self.x_goal
+        for k in range(max_iters):
+            xRand = ()
+            if random.uniform(0, 1) < goal_bias:
+                xRand = self.x_goal
             else:
-                rand_state = []
-                for i in range(state_dim):
-                    rand_state.append(np.random.uniform(self.statespace_lo[i], self.statespace_hi[i]))
-                x_rand = np.asarray(rand_state)
-
-            x_near_idx = self.find_nearest(V[range(n),:], x_rand)
-            x_near = V[x_near_idx]
-            x_new = self.steer_towards(x_near, x_rand, eps)
-
-            if self.is_free_motion(self.obstacles, x_near, x_new):
-                V[n,:] = x_new
-                P[n] = x_near_idx
-                n += 1
-                if (x_new == self.x_goal).all():
-                    path = np.array([self.x_goal])
-                    idx = n - 1
-                    while idx > 0:
-                        path = np.vstack((path, V[P[idx]]))
-                        # update idx to previous node's index
-                        idx = P[idx]
-                    self.path = np.flipud(path)
+                xRand = self.snap_to_grid(tuple([random.uniform(self.statespace_lo[i], self.statespace_hi[i]) for i in range(state_dim)]))
+            xNearInd = self.find_nearest(V[range(n), :], xRand)
+            xNew = self.steer_towards(V[xNearInd], xRand, eps)
+            if self.is_free_motion(xNew):
+                V[n] = xNew
+                P[n] = xNearInd
+                if xNew[0] == self.x_goal[0] and xNew[1] == self.x_goal[1]:
                     success = True
-                    break
-
+                    path = [self.x_goal]
+                    currIndex = n
+                    while P[currIndex] != -1:
+                        path.append(V[P[currIndex]])
+                        currIndex = P[currIndex]
+                    self.path = list(reversed(path))
+                n += 1
+            if success:
+                break
         ########## Code ends here ##########
 
         plt.figure()
-        self.plot_problem()
+        # self.plot_problem()
         self.plot_tree(V, P, color="blue", linewidth=.5, label="RRT tree", alpha=0.5)
         if success:
             if shortcut:
@@ -155,7 +160,7 @@ class RRT(object):
         return success
 
     def plot_problem(self):
-        plot_line_segments(self.obstacles, color="red", linewidth=2, label="obstacles")
+        # plot_line_segments(self.obstacles, color="red", linewidth=2, label="obstacles")
         plt.scatter([self.x_init[0], self.x_goal[0]], [self.x_init[1], self.x_goal[1]], color="green", s=30, zorder=10)
         plt.annotate(r"$x_{init}$", self.x_init[:2] + [.2, 0], fontsize=16)
         plt.annotate(r"$x_{goal}$", self.x_goal[:2] + [.2, 0], fontsize=16)
@@ -173,27 +178,23 @@ class RRT(object):
         """
         ########## Code starts here ##########
         success = False
-        num_nodes = len(self.path)
-        sol_path = self.path
-        idx = 0
-        while success is False:
+        while not success:
             success = True
-            for i in range(num_nodes):
-                # print(idx)
-                if idx >= len(sol_path):
-                    break
-                if (sol_path[idx,:] == self.x_init).all() or (sol_path[idx,:] == self.x_goal).all():
-                    idx += 1
-                    continue
-                if self.is_free_motion(self.obstacles, sol_path[idx-1,:], sol_path[idx+1,:]):
-                    sol_path = np.delete(sol_path, idx, 0)
-                    idx -= 1
-                    # print(sol_path)
+            index = 1
+            step = 10
+            while index < len(self.path)-1:
+                dx = (self.path[index+1][0] - self.path[index-1][0]) / step
+                dy = (self.path[index+1][1] - self.path[index-1][1]) / step
+                temp = True
+                for i in range(step + 1):
+                    if not self.is_free_motion(self.snap_to_grid((self.path[index-1][0] + i * dx, self.path[index-1][1] + i * dy))):
+                        temp = False
+                        break
+                if temp:
+                    self.path.pop(index)
                     success = False
-                idx += 1
-
-        self.path = sol_path
-
+                else:
+                    index += 1
         ########## Code ends here ##########
 
 class GeometricRRT(RRT):
@@ -206,28 +207,20 @@ class GeometricRRT(RRT):
         # Consult function specification in parent (RRT) class.
         ########## Code starts here ##########
         # Hint: This should take one line.
-        res = np.zeros(len(V))
-        for i in range(len(V)):
-            res[i] = np.linalg.norm(x - V[i])
-        return np.argmin(res)
+        return np.argmin([np.linalg.norm(np.array(V[i]) - np.array(x)) for i in range(len(V))])
         ########## Code ends here ##########
 
     def steer_towards(self, x1, x2, eps):
         # Consult function specification in parent (RRT) class.
         ########## Code starts here ##########
         # Hint: This should take one line.
-        if np.linalg.norm(x2 - x1) < eps:
-            return x2
-        else:
-            return x1 + (x2 - x1)/np.linalg.norm(x2 - x1)*eps
+        return x2 if eps > np.linalg.norm(np.array(x1)-np.array(x2)) else self.snap_to_grid((x1[0] + (x2[0]-x1[0])*eps/np.linalg.norm(np.array(x1)-np.array(x2)), x1[1] + (x2[1]-x1[1])*eps/np.linalg.norm(np.array(x1)-np.array(x2))))
         ########## Code ends here ##########
 
-    def is_free_motion(self, obstacles, x1, x2):
-        motion = np.array([x1, x2])
-        for line in obstacles:
-            if line_line_intersection(motion, line):
-                return False
-        return True
+    def is_free_motion(self, x2):
+        if x2[0] >= 0 and x2[0] < self.occupancy.width and x2[1] >= 0 and x2[1] < self.occupancy.height and self.occupancy.is_free(x2):
+            return True
+        return False
 
     def plot_tree(self, V, P, **kwargs):
         plot_line_segments([(V[P[i],:], V[i,:]) for i in range(V.shape[0]) if P[i] >= 0], **kwargs)
@@ -236,87 +229,112 @@ class GeometricRRT(RRT):
         path = np.array(self.path)
         plt.plot(path[:,0], path[:,1], **kwargs)
 
-class DubinsRRT(RRT):
+# class DubinsRRT(RRT):
+#     """
+#     Represents a planning problem for the Dubins car, a model of a simple
+#     car that moves at a constant speed forward and has a limited turning
+#     radius. We will use the dubins package at
+#     https://github.com/AndrewWalker/pydubins/blob/master/dubins/dubins.pyx
+#     to compute steering distances and steering trajectories. In particular,
+#     note the functions d_path = dubins.shortest_path and 
+#     functions of the path such as d_path.sample_many and d_path.path_length (read
+#     their documentation at the link above). See
+#     http://planning.cs.uiuc.edu/node821.html
+#     for more details on how these steering trajectories are derived.
+#     """
+#     def __init__(self, statespace_lo, statespace_hi, x_init, x_goal, obstacles, turning_radius):
+#         self.turning_radius = turning_radius
+#         super(self.__class__, self).__init__(statespace_lo, statespace_hi, x_init, x_goal, obstacles)
+
+#     def find_nearest(self, V, x):
+#         # Consult function specification in parent (RRT) class.
+#         # HINT: You may find the functions dubins.shortest_path() and path_length() useful
+#         # HINT: The order of arguments for dubins.shortest_path() is important for DubinsRRT.
+#         import dubins
+#         ########## Code starts here ##########
+#         return np.argmin([dubins.shortest_path(V[i], x, self.turning_radius).path_length() for i in range(len(V))])
+#         ########## Code ends here ##########
+
+#     def steer_towards(self, x1, x2, eps):
+#         import dubins
+#         """
+#         A subtle issue: if you use d_path.sample_many to return the point
+#         at distance eps along the path from x to y, use a turning radius
+#         slightly larger than self.turning_radius
+#         (i.e., 1.001*self.turning_radius). Without this hack,
+#         d_path.sample_many might return a point that can't quite get to in
+#         distance eps (using self.turning_radius) due to numerical precision
+#         issues.
+#         """
+#         # HINT: You may find the functions dubins.shortest_path(), d_path.path_length(), and d_path.sample_many() useful
+#         ########## Code starts here ##########
+#         return x2 if dubins.shortest_path(x1, x2, self.turning_radius).path_length() < eps else dubins.shortest_path(x1, x2, 1.001*self.turning_radius).sample_many(eps)[0][1]
+#         ########## Code ends here ##########
+
+#     def is_free_motion(self, obstacles, x1, x2, resolution = np.pi/6):
+#         import dubins
+#         d_path = dubins.shortest_path(x1, x2, self.turning_radius)
+#         pts = d_path.sample_many(self.turning_radius*resolution)[0]
+#         pts.append(x2)
+#         for i in range(len(pts) - 1):
+#             for line in obstacles:
+#                 if line_line_intersection([pts[i][:2], pts[i+1][:2]], line):
+#                     return False
+#         return True
+
+#     def plot_tree(self, V, P, resolution = np.pi/24, **kwargs):
+#         import dubins
+#         line_segments = []
+#         for i in range(V.shape[0]):
+#             if P[i] >= 0:
+#                 d_path = dubins.shortest_path(V[P[i],:], V[i,:], self.turning_radius)
+#                 pts = d_path.sample_many(self.turning_radius*resolution)[0]
+#                 pts.append(V[i,:])
+#                 for j in range(len(pts) - 1):
+#                     line_segments.append((pts[j], pts[j+1]))
+#         plot_line_segments(line_segments, **kwargs)
+
+#     def plot_path(self, resolution = np.pi/24, **kwargs):
+#         import dubins
+#         pts = []
+#         path = np.array(self.path)
+#         for i in range(path.shape[0] - 1):
+#             d_path = dubins.shortest_path(path[i], path[i+1], self.turning_radius)
+#             new_pts = d_path.sample_many(self.turning_radius*resolution)[0]
+#             pts.extend(new_pts)
+#         plt.plot([x for x, y, th in pts], [y for x, y, th in pts], **kwargs)
+
+class DetOccupancyGrid2D(object):
     """
-    Represents a planning problem for the Dubins car, a model of a simple
-    car that moves at a constant speed forward and has a limited turning
-    radius. We will use the dubins package at
-    https://github.com/AndrewWalker/pydubins/blob/master/dubins/dubins.pyx
-    to compute steering distances and steering trajectories. In particular,
-    note the functions d_path = dubins.shortest_path and
-    functions of the path such as d_path.sample_many and d_path.path_length (read
-    their documentation at the link above). See
-    http://planning.cs.uiuc.edu/node821.html
-    for more details on how these steering trajectories are derived.
+    A 2D state space grid with a set of rectangular obstacles. The grid is
+    fully deterministic
     """
-    def __init__(self, statespace_lo, statespace_hi, x_init, x_goal, obstacles, turning_radius):
-        self.turning_radius = turning_radius
-        super(self.__class__, self).__init__(statespace_lo, statespace_hi, x_init, x_goal, obstacles)
+    def __init__(self, width, height, obstacles):
+        self.width = width
+        self.height = height
+        self.obstacles = obstacles
 
-    def find_nearest(self, V, x):
-        # Consult function specification in parent (RRT) class.
-        # HINT: You may find the functions dubins.shortest_path() and path_length() useful
-        # HINT: The order of arguments for dubins.shortest_path() is important for DubinsRRT.
-        import dubins
-        ########## Code starts here ##########
-        dist = []
-        for i in range(len(V)):
-            d_path = dubins.shortest_path(V[i,:], x, self.turning_radius)
-            dist.append(d_path.path_length())
-        dist = np.array(dist)
-        return np.argmin(dist)
-        ########## Code ends here ##########
-
-    def steer_towards(self, x1, x2, eps):
-        import dubins
-        """
-        A subtle issue: if you use d_path.sample_many to return the point
-        at distance eps along the path from x to y, use a turning radius
-        slightly larger than self.turning_radius
-        (i.e., 1.001*self.turning_radius). Without this hack,
-        d_path.sample_many might return a point that can't quite get to in
-        distance eps (using self.turning_radius) due to numerical precision
-        issues.
-        """
-        # HINT: You may find the functions dubins.shortest_path(), d_path.path_length(), and d_path.sample_many() useful
-        ########## Code starts here ##########
-        d_path = dubins.shortest_path(x1, x2, 1.001*self.turning_radius)
-        if d_path.path_length() < eps:
-            return x2
-        else:
-            q,s = d_path.sample_many(eps)
-            return q[1]
-        ########## Code ends here ##########
-
-    def is_free_motion(self, obstacles, x1, x2, resolution = np.pi/6):
-        import dubins
-        d_path = dubins.shortest_path(x1, x2, self.turning_radius)
-        pts = d_path.sample_many(self.turning_radius*resolution)[0]
-        pts.append(x2)
-        for i in range(len(pts) - 1):
-            for line in obstacles:
-                if line_line_intersection([pts[i][:2], pts[i+1][:2]], line):
-                    return False
+    def is_free(self, x):
+        """Verifies that point is not inside any obstacles"""
+        for obs in self.obstacles:
+            inside = True
+            for dim in range(len(x)):
+                if x[dim] < obs[0][dim] or x[dim] > obs[1][dim]:
+                    inside = False
+                    break
+            if inside:
+                return False
         return True
 
-    def plot_tree(self, V, P, resolution = np.pi/24, **kwargs):
-        import dubins
-        line_segments = []
-        for i in range(V.shape[0]):
-            if P[i] >= 0:
-                d_path = dubins.shortest_path(V[P[i],:], V[i,:], self.turning_radius)
-                pts = d_path.sample_many(self.turning_radius*resolution)[0]
-                pts.append(V[i,:])
-                for j in range(len(pts) - 1):
-                    line_segments.append((pts[j], pts[j+1]))
-        plot_line_segments(line_segments, **kwargs)
+    def plot(self, fig_num=0):
+        """Plots the space and its obstacles"""
+        fig = plt.figure(fig_num)
+        ax = fig.add_subplot(111, aspect='equal')
+        for obs in self.obstacles:
+            ax.add_patch(
+            patches.Rectangle(
+            obs[0],
+            obs[1][0]-obs[0][0],
+            obs[1][1]-obs[0][1],))
+        ax.set(xlim=(0,self.width), ylim=(0,self.height))
 
-    def plot_path(self, resolution = np.pi/24, **kwargs):
-        import dubins
-        pts = []
-        path = np.array(self.path)
-        for i in range(path.shape[0] - 1):
-            d_path = dubins.shortest_path(path[i], path[i+1], self.turning_radius)
-            new_pts = d_path.sample_many(self.turning_radius*resolution)[0]
-            pts.extend(new_pts)
-        plt.plot([x for x, y, th in pts], [y for x, y, th in pts], **kwargs)

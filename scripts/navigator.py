@@ -10,7 +10,7 @@ import numpy as np
 from numpy import linalg
 from utils.utils import wrapToPi
 from utils.grids import StochOccupancyGrid2D
-from planners import AStar, compute_smoothed_traj
+from planners import *
 import scipy.interpolate
 import matplotlib.pyplot as plt
 from controllers import PoseController, TrajectoryTracker, HeadingController
@@ -80,7 +80,7 @@ class Navigator:
         self.plan_start = [0.0, 0.0]
 
         # Robot limits
-        self.v_max = 0.15  # maximum velocity
+        self.v_max = 0.1  # maximum velocity
         self.om_max = 0.4  # maximum angular velocity
 
         self.v_des = 0.1  # desired cruising velocity
@@ -99,8 +99,8 @@ class Navigator:
         self.traj_dt = 0.1
 
         # trajectory tracking controller parameters
-        self.kpx = 0.5
-        self.kpy = 0.5
+        self.kpx = 0.3
+        self.kpy = 0.3
         self.kdx = 1.5
         self.kdy = 1.5
 
@@ -342,7 +342,16 @@ class Navigator:
         x_init = self.snap_to_grid((self.x, self.y))
         self.plan_start = x_init
         x_goal = self.snap_to_grid((self.x_g, self.y_g))
-        problem = AStar(
+        # problem = AStar(
+        #     state_min,
+        #     state_max,
+        #     x_init,
+        #     x_goal,
+        #     self.occupancy,
+        #     self.plan_resolution,
+        # )
+
+        problem = GeometricRRT(
             state_min,
             state_max,
             x_init,
@@ -352,7 +361,8 @@ class Navigator:
         )
 
         rospy.loginfo("Navigator: computing navigation plan")
-        success = problem.solve()
+        success = problem.solve(self.plan_resolution * 2, 1000, shortcut=True)
+        # success = problem.solve()
         if not success:
             rospy.loginfo("Planning failed")
             return
