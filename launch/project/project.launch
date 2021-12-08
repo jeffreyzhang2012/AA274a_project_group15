@@ -20,5 +20,6 @@
   <node pkg="AA274a_project" type="detector.py" name="detector" />
   <!-- <node pkg="AA274a_project" type="detector_mobilenet.py" name="detector" /> -->
   <node pkg="AA274a_project" type="navigator.py" name="navigator" output="screen" />
+  <node pkg="AA274a_project" type="marker.py" name="marker_node" output="screen" />
   <!-- <node pkg="AA274a_project" type="supervisor.py" name="supervisor" output="screen" /> -->
 </launch>
