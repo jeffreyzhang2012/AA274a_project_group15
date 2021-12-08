@@ -182,13 +182,13 @@ class Navigator:
 
     def detected_callback(self, msg):
         for o in msg.ob_msgs:
-            print("detected: " + o.name)
+            # print("detected: " + o.name)
             if o.name == "stop_sign" and o.distance < STOP_DIST_CONST and self.mode == Mode.TRACK:
                 if self.stop_time + STOP_TIME_CONST < rospy.get_time():
                     self.stop_time = rospy.get_time()
                     print("Stop for stop sign!")
                     self.mode = Mode.STOP
-            print("detected: " + o.name)
+            # print("detected: " + o.name)
             if o.name == "person" and o.distance < STOP_DIST_CONST and self.mode == Mode.TRACK:
                 if self.stop_time + STOP_TIME_CONST < rospy.get_time():
                     self.stop_time = rospy.get_time()
@@ -197,7 +197,7 @@ class Navigator:
             if o.name == "car" or o.name == "truck":
                 self.detected_set.add("suv")
                 print("Detected a SUV!")
-            if o.name == "bus":
+            if o.name == "bus" or o.name == "suitcase":
                 self.detected_set.add("bus")
                 print("Detected a bus!")
             if o.name == "fire_hydrant":
@@ -376,9 +376,9 @@ class Navigator:
         elif self.mode == Mode.CROSS:
             self.state_pub.publish("CROSS")
         
-        if len(self.target_list):
-            for k in self.target_list:
-                print("%s, %d, %d", k, self.target_list[k][0], self.target_list[k][1])
+        # if len(self.target_list):
+        #     for k in self.target_list:
+        #         print("%s, %d, %d", k, self.target_list[k][0], self.target_list[k][1])
 
     def get_current_plan_time(self):
         t = (rospy.get_rostime() - self.current_plan_start_time).to_sec()
