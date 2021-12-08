@@ -23,7 +23,7 @@ from frontier import *
 from dynamic_reconfigure.server import Server
 from asl_turtlebot.cfg import NavigatorConfig
 
-STOP_DIST_CONST = 0.3
+STOP_DIST_CONST = 0.7
 STOP_TIME_CONST = 3
 CROSS_TIME_CONST = 6
 # state machine modes, not all implemented
@@ -46,7 +46,8 @@ class Navigator:
         rospy.init_node("turtlebot_navigator", anonymous=True)
         self.mode = Mode.IDLE
         self.target_list = defaultdict(tuple)
-        self.detected_set = {}
+        self.detected_set = set()
+        self.text = ""
         # current state
         self.x = 0.0
         self.y = 0.0
@@ -149,9 +150,10 @@ class Navigator:
         self.cfg_srv = Server(NavigatorConfig, self.dyn_cfg_callback)
 
         rospy.Subscriber("/map", OccupancyGrid, self.map_callback)
-        rospy.Subscriber("/map_metadata", MapMetaData, self.map_md_callback)
+        rospy.Subscriber("/map_metadata",  MapMetaData, self.map_md_callback)
         rospy.Subscriber("/cmd_nav", Pose2D, self.cmd_nav_callback)
         rospy.Subscriber('/detector/objects', DetectedObjectList, self.detected_callback)
+        rospy.Subscriber('/input', String, self.input_callback)
         print("finished init")
 
     def dyn_cfg_callback(self, config, level):
@@ -215,6 +217,9 @@ class Navigator:
         self.map_resolution = msg.resolution
         self.map_origin = (msg.origin.position.x, msg.origin.position.y)
 
+    def input_callback(self, msg):
+        self.text = str(msg.data)
+
     def map_callback(self, msg):
         """
         receives new map info and updates the map
@@ -240,7 +245,7 @@ class Navigator:
                 # if we have a goal to plan to, replan
                 rospy.loginfo("replanning because of new map")
                 # if (self.mode != Mode.STOP):
-                #     self.replan()  # new map, need to replan
+                self.replan()  # new map, need to replan
 
     def shutdown_callback(self):
         """
@@ -509,11 +514,10 @@ class Navigator:
                 self.switch_mode(Mode.IDLE)
                 print(e)
                 pass
-
             # STATE MACHINE LOGIC
             # some transitions handled by callbacks
             if self.mode == Mode.IDLE:
-                print(self.picking_up)
+                # print(self.picking_up)
                 if not self.explored_all:
                     # next_step = self.frontier.step()
                     # if not next_step:
@@ -522,8 +526,10 @@ class Navigator:
                     #     self.x_g = next_step[0]
                     #     self.y_g = next_step[1]
                     #     self.replan()
-                    text = input("Continue? (N/Y)")
-                    if text == "N" or text == "n":
+                    # self.text = input("Continue? (N/Y)")
+                    # print("\n\n\n\n")
+                    # print(self.text)
+                    if self.text == "N" or self.text == "n":
                         self.explored_all = True
                     else:
                         pass
@@ -534,17 +540,20 @@ class Navigator:
                     rate2 = rospy.Rate(0.2)
                     rate2.sleep()
                     self.replan()
-                    picking_up = True
-                elif picking_up:
-                    print([i for i in self.detected_set])
-                    text = input("Choose a target: ")
-                    if text not in self.detected_set:
-                        print("Invalid Target")
+                    self.picking_up = True
+                elif self.picking_up:
+                    # print([i for i in self.detected_set])
+                    # self.text = input("Choose a target: ")
+                    if self.text not in self.detected_set:
+                        # print("Invalid Target")
+                        pass
                     else:
-                        self.x_g = self.target_list[text][0]
-                        self.y_g = self.target_list[text][1]
+                        self.x_g = self.target_list[self.text][0]
+                        self.y_g = self.target_list[self.text][1]
+                        self.theta_g = self.theta_init
+                        self.text = ""
                         self.replan()
-                        picking_up = False
+                        self.picking_up = False
 
             elif self.mode == Mode.ALIGN:
                 if self.aligned():
@@ -553,9 +562,9 @@ class Navigator:
             elif self.mode == Mode.TRACK:
                 if self.near_goal():
                     self.switch_mode(Mode.PARK)
-                elif not self.close_to_plan_start():
-                    rospy.loginfo("replanning because far from start")
-                    self.replan()
+                # elif not self.close_to_plan_start():
+                #     rospy.loginfo("replanning because far from start")
+                #     self.replan()
                     # self.switch_mode(Mode.ALIGN)
                 # elif (
                 #     rospy.get_rostime() - self.current_plan_start_time
@@ -575,7 +584,6 @@ class Navigator:
             elif self.mode == Mode.CROSS:
                 if self.stop_time + STOP_TIME_CONST+ CROSS_TIME_CONST < rospy.get_time():
                     self.switch_mode(Mode.TRACK)     
-
             self.publish_control()
             self.publish_state()
             rate.sleep()
