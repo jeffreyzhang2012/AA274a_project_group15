@@ -2,20 +2,23 @@
   <arg name="sim" default="true"/>
 
   <include file="$(find AA274a_project)/launch/root.launch">
-    <arg name="world" value="project_city" />
+    <arg name="world" value="final_project" />
     <arg name="x_pos" default="3.15"/>
     <arg name="y_pos" default="1.6"/>
     <arg name="z_pos" default="0.0"/>
     <arg name="rviz" default="section4"/>
     <arg name="model" default="asl_turtlebot"/>
-    <arg name="detector" default="detector.py" />
+    <!-- <arg name="detector" default="detector.py" /> -->
     <arg name="sim" default="$(arg sim)"/>
   </include>
   
+ 
+
   <!-- <arg name="use_tf" default="True" /> -->
   <!-- <rosparam param="use_tf" subst_value="True"></rosparam> -->
-  <rosparam param="use_tf">False</rosparam>
-
-
+  <rosparam param="use_tf">true</rosparam>
+  <node pkg="AA274a_project" type="detector.py" name="detector" />
+  <!-- <node pkg="AA274a_project" type="detector_mobilenet.py" name="detector" /> -->
   <node pkg="AA274a_project" type="navigator.py" name="navigator" output="screen" />
+  <!-- <node pkg="AA274a_project" type="supervisor.py" name="supervisor" output="screen" /> -->
 </launch>

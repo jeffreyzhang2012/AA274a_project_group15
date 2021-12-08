@@ -11,7 +11,7 @@ except:
     pass
 import numpy as np
 from sensor_msgs.msg import Image, CameraInfo, LaserScan
-from asl_turtlebot.msg import DetectedObject
+from asl_turtlebot.msg import DetectedObject, DetectedObjectList
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import math
@@ -39,13 +39,16 @@ class DetectorParams:
         self.use_tf = rospy.get_param("use_tf")
 
         # Path to the trained conv net
-        model_path = rospy.get_param("~model_path", "../../tfmodels/stop_signs_gazebo.pb")
+        # model_path = rospy.get_param("~model_path", "../../tfmodels/stop_signs_gazebo.pb")
+        model_path = rospy.get_param("~model_path", "../../tfmodels/ssd_mobilenet_v1_coco.pb")
         label_path = rospy.get_param("~label_path", "../../tfmodels/coco_labels.txt")
         self.model_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), model_path)
         self.label_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), label_path)
 
         # Minimum score for positive detection
         self.min_score = rospy.get_param("~min_score", 0.5)
+        
+        
 
         if verbose:
             print("DetectorParams:")
@@ -86,7 +89,9 @@ class Detector:
 
         self.object_publishers = {}
         self.object_labels = load_object_labels(self.params.label_path)
-
+        self.detected_objects_pub = rospy.Publisher(
+            "/detector/objects", DetectedObjectList, queue_size=10
+        )
         self.tf_listener = TransformListener()
         rospy.Subscriber('/camera/image_raw', Image, self.camera_callback, queue_size=1)
         rospy.Subscriber('/camera/camera_info', CameraInfo, self.camera_info_callback)
@@ -159,10 +164,12 @@ class Detector:
         that is a unit vector in the direction of the pixel, in the camera frame """
 
         ########## Code starts here ##########
-        # TODO: Compute x, y, z.
-        x = 0.
-        y = 0.
-        z = 1.
+        x = (u - self.cx) / self.fx
+        y = (v - self.cy) / self.fy
+        norm = math.sqrt(x * x + y * y + 1)
+        x /= norm
+        y /= norm
+        z = 1.0 / norm
         ########## Code ends here ##########
 
         return x, y, z
@@ -207,6 +214,9 @@ class Detector:
         (boxes, scores, classes, num) = self.run_detection(img)
 
         if num > 0:
+            # create list of detected objects
+            detected_objects = DetectedObjectList()
+
             # some objects were detected
             for (box,sc,cl) in zip(boxes, scores, classes):
                 ymin = int(box[0]*img_h)
@@ -248,6 +258,12 @@ class Detector:
                 object_msg.corners = [ymin,xmin,ymax,xmax]
                 self.object_publishers[cl].publish(object_msg)
 
+                 # add detected object to detected objects list
+                detected_objects.objects.append(self.object_labels[cl])
+                detected_objects.ob_msgs.append(object_msg)
+
+            self.detected_objects_pub.publish(detected_objects)
+
         # displays the camera image
         cv2.imshow("Camera", img_bgr8)
         cv2.waitKey(1)
@@ -259,17 +275,21 @@ class Detector:
 
         ########## Code starts here ##########
         # TODO: Extract camera intrinsic parameters.
-        h = msg.height
-        w = msg.width
-        distortion_params = msg.D
-        intr_camera_matrix = msg.K
-        rectification_matrix = msg.R
-        projection_matrix = msg.P
+        # h = msg.height
+        # w = msg.width
+        # distortion_params = msg.D
+        # intr_camera_matrix = msg.K
+        # rectification_matrix = msg.R
+        # projection_matrix = msg.P
 
-        self.cx = intr_camera_matrix[2]
-        self.cy = intr_camera_matrix[5]
-        self.fx = intr_camera_matrix[0]
-        self.fy = intr_camera_matrix[4]
+        # self.cx = intr_camera_matrix[2]
+        # self.cy = intr_camera_matrix[5]
+        # self.fx = intr_camera_matrix[0]
+        # self.fy = intr_camera_matrix[4]
+        self.cx = msg.P[2]
+        self.cy = msg.P[6]
+        self.fx = msg.P[0]
+        self.fy = msg.P[5]
         ########## Code ends here ##########
 
     def laser_callback(self, msg):

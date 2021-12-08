@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from math import cos
 import rospy
 from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
 from geometry_msgs.msg import Twist, Pose2D, PoseStamped
@@ -15,15 +16,16 @@ import scipy.interpolate
 import matplotlib.pyplot as plt
 from controllers import PoseController, TrajectoryTracker, HeadingController
 from enum import Enum
-
+import sys
+from collections import defaultdict
 from frontier import *
 
 from dynamic_reconfigure.server import Server
 from asl_turtlebot.cfg import NavigatorConfig
 
-STOP_DIST_CONST = 3
-STOP_TIME_CONST = 5
-
+STOP_DIST_CONST = 0.3
+STOP_TIME_CONST = 3
+CROSS_TIME_CONST = 6
 # state machine modes, not all implemented
 class Mode(Enum):
     IDLE = 0
@@ -31,6 +33,7 @@ class Mode(Enum):
     TRACK = 2
     PARK = 3
     STOP = 4
+    CROSS = 5
 
 
 class Navigator:
@@ -42,17 +45,21 @@ class Navigator:
     def __init__(self):
         rospy.init_node("turtlebot_navigator", anonymous=True)
         self.mode = Mode.IDLE
-
+        self.target_list = defaultdict(tuple)
+        self.detected_set = {}
         # current state
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
-
+        self.x_init = 3.15
+        self.y_init = 1.6
+        self.theta_init = 0
         # goal state
         self.x_g = None
         self.y_g = None
         self.theta_g = None
         self.explored_all = False
+        self.picking_up = False
         self.frontier =  frontier
 
         #ts
@@ -80,7 +87,7 @@ class Navigator:
         self.plan_start = [0.0, 0.0]
 
         # Robot limits
-        self.v_max = 0.1  # maximum velocity
+        self.v_max = 0.15  # maximum velocity
         self.om_max = 0.4  # maximum angular velocity
 
         self.v_des = 0.1  # desired cruising velocity
@@ -90,7 +97,7 @@ class Navigator:
         )
 
         # threshold at which navigator switches from trajectory to pose control
-        self.near_thresh = 0.1
+        self.near_thresh = 0.2
         self.at_thresh = 0.05
         self.at_thresh_theta = 0.1
 
@@ -103,6 +110,12 @@ class Navigator:
         self.kpy = 0.3
         self.kdx = 1.5
         self.kdy = 1.5
+
+        # Target_list
+        self.target_list["fire_hydrant"] = (3.336, 0.32)
+        self.target_list["bus"] = (0.4, 0.32)
+        self.target_list["suv"] = (1.35, 0.283)
+        self.target_list["bowl"] = (2.156, 1.728)
 
         # heading controller parameters
         self.kp_th = 2.0
@@ -139,7 +152,6 @@ class Navigator:
         rospy.Subscriber("/map_metadata", MapMetaData, self.map_md_callback)
         rospy.Subscriber("/cmd_nav", Pose2D, self.cmd_nav_callback)
         rospy.Subscriber('/detector/objects', DetectedObjectList, self.detected_callback)
-
         print("finished init")
 
     def dyn_cfg_callback(self, config, level):
@@ -166,13 +178,33 @@ class Navigator:
             self.replan()
         # self.occupancy.is_free_2(np.array([data.x,data.y]))
 
-    def detected_callback(self, data):
+    def detected_callback(self, msg):
         for o in msg.ob_msgs:
             print("detected: " + o.name)
             if o.name == "stop_sign" and o.distance < STOP_DIST_CONST and self.mode == Mode.TRACK:
                 if self.stop_time + STOP_TIME_CONST < rospy.get_time():
                     self.stop_time = rospy.get_time()
+                    print("Stop for stop sign!")
                     self.mode = Mode.STOP
+            print("detected: " + o.name)
+            if o.name == "person" and o.distance < STOP_DIST_CONST and self.mode == Mode.TRACK:
+                if self.stop_time + STOP_TIME_CONST < rospy.get_time():
+                    self.stop_time = rospy.get_time()
+                    print("Stop for person!")
+                    self.mode = Mode.STOP
+            if o.name == "car" or o.name == "truck":
+                self.detected_set.add("suv")
+                print("Detected a SUV!")
+            if o.name == "bus":
+                self.detected_set.add("bus")
+                print("Detected a bus!")
+            if o.name == "fire_hydrant":
+                self.detected_set.add("fire_hydrant")
+                print("Detected a fire hydrant!")
+            if o.name == "bowl" or o.name == "sink":
+                self.detected_set.add("bowl")
+                print("Detected a bowl!")
+            
 
     def map_md_callback(self, msg):
         """
@@ -200,14 +232,15 @@ class Navigator:
                 self.map_height,
                 self.map_origin[0],
                 self.map_origin[1],
-                6,
+                8,
                 self.map_probs,
             )
             # if self.x_g is not None and self.mode == Mode.IDLE:
             if self.x_g is not None:
                 # if we have a goal to plan to, replan
                 rospy.loginfo("replanning because of new map")
-                self.replan()  # new map, need to replan
+                # if (self.mode != Mode.STOP):
+                #     self.replan()  # new map, need to replan
 
     def shutdown_callback(self):
         """
@@ -305,6 +338,10 @@ class Navigator:
             V, om = self.traj_controller.compute_control(
                 self.x, self.y, self.theta, t
             )
+        elif self.mode == Mode.CROSS:
+            V, om = self.traj_controller.compute_control(
+                self.x, self.y, self.theta, t
+            )
         elif self.mode == Mode.ALIGN:
             V, om = self.heading_controller.compute_control(
                 self.x, self.y, self.theta, t
@@ -329,7 +366,14 @@ class Navigator:
             self.state_pub.publish("TRACK")
         elif self.mode == Mode.PARK:
             self.state_pub.publish("PARK")
-
+        elif self.mode == Mode.STOP:
+            self.state_pub.publish("STOP")
+        elif self.mode == Mode.CROSS:
+            self.state_pub.publish("CROSS")
+        
+        if len(self.target_list):
+            for k in self.target_list:
+                print("%s, %d, %d", k, self.target_list[k][0], self.target_list[k][1])
 
     def get_current_plan_time(self):
         t = (rospy.get_rostime() - self.current_plan_start_time).to_sec()
@@ -469,20 +513,39 @@ class Navigator:
             # STATE MACHINE LOGIC
             # some transitions handled by callbacks
             if self.mode == Mode.IDLE:
-                # if not explored_all:
-                #     next_step = self.frontier.step()
-                #     if not next_step:
-                #         explored_all = True
-                #     else:
-                #         self.x_g = next_step[0]
-                #         self.y_g = next_step[1]
-                #         self.replan()
-                # else:
-                #     self.x_g = 0
-                #     self.y_g = 0
-                #     self.theta = 0
-                #     self.replan()
-                pass
+                print(self.picking_up)
+                if not self.explored_all:
+                    # next_step = self.frontier.step()
+                    # if not next_step:
+                    #     explored_all = True
+                    # else:
+                    #     self.x_g = next_step[0]
+                    #     self.y_g = next_step[1]
+                    #     self.replan()
+                    text = input("Continue? (N/Y)")
+                    if text == "N" or text == "n":
+                        self.explored_all = True
+                    else:
+                        pass
+                elif not self.picking_up:
+                    self.x_g = self.x_init
+                    self.y_g = self.y_init
+                    self.theta_g = self.theta_init
+                    rate2 = rospy.Rate(0.2)
+                    rate2.sleep()
+                    self.replan()
+                    picking_up = True
+                elif picking_up:
+                    print([i for i in self.detected_set])
+                    text = input("Choose a target: ")
+                    if text not in self.detected_set:
+                        print("Invalid Target")
+                    else:
+                        self.x_g = self.target_list[text][0]
+                        self.y_g = self.target_list[text][1]
+                        self.replan()
+                        picking_up = False
+
             elif self.mode == Mode.ALIGN:
                 if self.aligned():
                     self.current_plan_start_time = rospy.get_rostime()
@@ -493,6 +556,7 @@ class Navigator:
                 elif not self.close_to_plan_start():
                     rospy.loginfo("replanning because far from start")
                     self.replan()
+                    # self.switch_mode(Mode.ALIGN)
                 # elif (
                 #     rospy.get_rostime() - self.current_plan_start_time
                 # ).to_sec() > self.current_plan_duration:
@@ -507,7 +571,10 @@ class Navigator:
                     self.switch_mode(Mode.IDLE)
             elif self.mode == Mode.STOP:
                 if self.stop_time + STOP_TIME_CONST < rospy.get_time():
-                    self.switch_mode(Mode.TRACK)
+                    self.switch_mode(Mode.CROSS)
+            elif self.mode == Mode.CROSS:
+                if self.stop_time + STOP_TIME_CONST+ CROSS_TIME_CONST < rospy.get_time():
+                    self.switch_mode(Mode.TRACK)     
 
             self.publish_control()
             self.publish_state()

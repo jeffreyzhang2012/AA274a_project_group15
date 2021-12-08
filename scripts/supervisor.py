@@ -88,6 +88,9 @@ class Supervisor:
         # Stop sign detector
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
 
+        # person detector
+        rospy.Subscriber('/detector/person', DetectedObject, self.person_detected_callback)
+
         # High-level navigation pose
         rospy.Subscriber('/nav_pose', Pose2D, self.nav_pose_callback)
 
@@ -144,6 +147,17 @@ class Supervisor:
         self.mode = Mode.NAV
 
     def stop_sign_detected_callback(self, msg):
+        """ callback for when the detector has found a stop sign. Note that
+        a distance of 0 can mean that the lidar did not pickup the stop sign at all """
+
+        # distance of the stop sign
+        dist = msg.distance
+
+        # if close enough and in nav mode, stop
+        if dist > 0 and dist < self.params.stop_min_dist and self.mode == Mode.NAV:
+            self.init_stop_sign()
+
+    def person_detected_callback(self, msg):
         """ callback for when the detector has found a stop sign. Note that
         a distance of 0 can mean that the lidar did not pickup the stop sign at all """
 
@@ -243,8 +257,7 @@ class Supervisor:
             self.prev_mode = self.mode
 
         ########## Code starts here ##########
-        # TODO: Currently the state machine will just go to the pose without stopping
-        #       at the stop sign.
+    
 
         if self.mode == Mode.IDLE:
             # Send zero velocity
@@ -259,11 +272,16 @@ class Supervisor:
 
         elif self.mode == Mode.STOP:
             # At a stop sign
-            self.nav_to_pose()
+            self.stay_idle()
+            if self.has_stopped():
+                self.mode = Mode.CROSS
 
         elif self.mode == Mode.CROSS:
             # Crossing an intersection
             self.nav_to_pose()
+            if self.has_crossed():
+                self.mode = Mode.NAV
+                
 
         elif self.mode == Mode.NAV:
             if self.close_to(self.x_g, self.y_g, self.theta_g):

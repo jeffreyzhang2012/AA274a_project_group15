@@ -59,15 +59,18 @@ class TrajectoryTracker:
         x_d, xd_d, xdd_d, y_d, yd_d, ydd_d = self.get_desired_state(t)
 
         ########## Code starts here ##########
-        cloest_t_index = np.argmin(np.abs(self.traj_times-t))
-        xd = self.traj[cloest_t_index,3]
-        yd = self.traj[cloest_t_index,4]
-        u1 = xdd_d + self.kpx * (x_d-x) + self.kdx * (xd_d-xd)
-        u2 = ydd_d + self.kpy * (y_d-y) + self.kdy * (yd_d-yd)
-        V = self.V_prev + dt * (np.cos(th)*u1+np.sin(th)*u2)
-        V = np.sqrt(xd_d**2+yd_d**2) if V < V_PREV_THRES else V
-        om = (-np.sin(th)*u1 + np.cos(th)*u2)/self.V_prev
-        # V = np.sqrt(xd_d**2+yd_d**2) if V < V_PREV_THRES else V
+        if self.V_prev < V_PREV_THRES:
+            self.V_prev = sqrt(xd_d**2 + yd_d**2)
+        xdot = self.V_prev*cos(th)
+        ydot = self.V_prev*sin(th)
+        u1 = xdd_d + self.kpx*(x_d - x) + self.kdx*(xd_d - xdot)
+        u2 = ydd_d + self.kpy*(y_d - y) + self.kdy*(yd_d - ydot)
+        V_dot = cos(th)*u1 +sin(th)*u2
+        V = self.V_prev + V_dot*dt
+        
+        if V < V_PREV_THRES:
+            V = sqrt(xd_d**2 + yd_d**2)
+        om = -1/self.V_prev*sin(th)*u1 + 1/self.V_prev*cos(th)*u2
         ########## Code ends here ##########
 
         # apply control limits
