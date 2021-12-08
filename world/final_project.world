@@ -1280,15 +1280,15 @@
       <heading_deg>0</heading_deg>
     </spherical_coordinates>
     <state world_name='default'>
-      <sim_time>590 439000000</sim_time>
-      <real_time>196 896055823</real_time>
-      <wall_time>1638848007 668891907</wall_time>
-      <iterations>133551</iterations>
+      <sim_time>673 433000000</sim_time>
+      <real_time>217 662245373</real_time>
+      <wall_time>1638939386 25599759</wall_time>
+      <iterations>82994</iterations>
       <model name='Stop Sign'>
-        <pose>3.55 1.4 -8e-06 0.000323 -9.4e-05 3.14159</pose>
+        <pose>2.0963 0.627624 -9e-06 -0.000345 -7.3e-05 1.58783</pose>
         <scale>1 1 1</scale>
         <link name='link'>
-          <pose>3.55 1.4 -8e-06 0.000323 -9.4e-05 3.14159</pose>
+          <pose>2.0963 0.627624 -9e-06 -0.000345 -7.3e-05 1.58783</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 -9.8 0 -0 0</acceleration>
           <wrench>0 0 -9.8 0 -0 0</wrench>
@@ -1315,7 +1315,7 @@
         </link>
       </model>
       <model name='fire_hydrant'>
-        <pose>3.33604 0.320457 0 0 -0 0</pose>
+        <pose>3.33605 0.320457 0 0 -0 0</pose>
         <scale>1 1 1</scale>
         <model name='fire_hydrant'>
           <pose>3.33605 0.320457 0 0 -0 0</pose>
@@ -1339,10 +1339,10 @@
         </link>
       </model>
       <model name='person_standing'>
-        <pose>2.85957 2.36311 -0.008999 5e-06 -8e-06 -2e-05</pose>
+        <pose>3.05672 2.3833 -0.008997 5e-06 -8e-06 -2e-05</pose>
         <scale>1 1 1</scale>
         <link name='link'>
-          <pose>2.85957 2.36311 -0.008999 5e-06 -8e-06 -2e-05</pose>
+          <pose>3.05672 2.3833 -0.008997 5e-06 -8e-06 -2e-05</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
@@ -1634,7 +1634,7 @@
     </state>
     <gui fullscreen='0'>
       <camera name='user_camera'>
-        <pose>3.94384 3.19323 7.63484 -0 1.3578 -1.32936</pose>
+        <pose>3.41285 3.06234 7.25115 -0 1.3578 -1.32936</pose>
         <view_controller>orbit</view_controller>
         <projection_type>perspective</projection_type>
       </camera>

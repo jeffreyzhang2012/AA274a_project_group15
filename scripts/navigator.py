@@ -244,8 +244,8 @@ class Navigator:
             if self.x_g is not None:
                 # if we have a goal to plan to, replan
                 rospy.loginfo("replanning because of new map")
-                # if (self.mode != Mode.STOP):
-                self.replan()  # new map, need to replan
+                if (self.mode != Mode.STOP):
+                    self.replan()  # new map, need to replan
 
     def shutdown_callback(self):
         """
